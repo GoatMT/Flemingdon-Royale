@@ -64,7 +64,7 @@ function createBuildingMeshes(scene,features,buildingMeshes,collisions,grid,cell
     [mat('#59645e',.88),mat('#c1b89e',.82)],
     [mat('#4f5b59',.84),mat('#c9c6b7',.76)]
   ];
-  const batches=palette.map(()=>[[],[]]),windowRecords=[];
+  const batches=palette.map(()=>[[[],[]],[[],[]]]),windowRecords=[];
   for(const feature of features){
     const height=Math.max(3,Math.min(180,Number(feature.height)||10));
     const tier=height<9?0:height<20?1:height<55?2:3;
