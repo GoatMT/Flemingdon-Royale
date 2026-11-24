@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#071712">
+  <title>LSL: Flemingdon Royale</title>
+  <link rel="icon" href="./assets/flemingdon-royale-logo.png">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./src/main.js"></script>
+</head>
+<body>
+  <canvas id="game" aria-label="Flemingdon Royale game"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <main id="lobby" class="lobby">
+    <section class="lobby-card">
+      <div class="lobby-brand"><img src="./assets/flemingdon-royale-logo.png" alt="LSL Flemingdon Royale"><span>SOLO · 12 CONTESTANTS · CPU LOBBY</span></div>
+      <div class="lobby-copy"><span class="eyebrow">A LANTERN SOCCER LEAGUE BATTLE ROYALE</span><h1>FLEMINGDON<br><em>IS YOURS.</em></h1><p>Drop into a neighbourhood-scale Flemingdon Park map, built around local streets, parks, and landmarks. Find gear, outlast the zone, and be the last Lantern standing.</p></div>
+      <div class="character-panel">
+        <div class="panel-heading"><span>CHOOSE YOUR CONTESTANT</span><span id="roster-count">LOADING LSL ROSTER…</span></div>
+        <div class="character-tabs" role="group" aria-label="Character type"><button class="active" data-character-mode="official">LSL PLAYER</button><button data-character-mode="custom">CUSTOM PLAYER</button></div>
+        <div id="official-fields" class="selection-fields">
+          <label>PLAYER<select id="player-select" disabled><option>Loading 2026 roster…</option></select></label>
+          <div id="player-card" class="player-card"><div class="player-mark">LSL</div><div><strong>Choose an LSL player</strong><small>Official player name, jersey and team</small></div><span class="ovr">—</span></div>
+          <label>DROP LOCATION<select id="drop-select"><option value="flemingdon-park">Flemingdon Park · 150 Grenoble Dr</option><option value="community-centre">Community Centre · 150 Grenoble Dr</option><option value="flemingdon-library">Flemingdon Park Library</option><option value="grenoble-school">Grenoble Public School</option><option value="gateway-school">Gateway Public School</option><option value="marc-garneau">Marc Garneau Collegiate</option><option value="et-seton-park">E.T. Seton Park</option><option value="charles-sauriol">Charles Sauriol Conservation Area</option></select></label>
+        </div>
+        <div id="custom-fields" class="selection-fields" hidden>
+          <label>PLAYER NAME<input id="custom-name" maxlength="20" value="Rookie" autocomplete="off" placeholder="Choose a name"></label>
+          <label>JERSEY COLOR<input id="custom-color" type="color" value="#e5b83b"></label>
+          <p class="small-note">Custom character · fictional LSL newcomer</p>
+        </div>
+        <div class="lobby-actions"><button id="drop-button" class="primary" disabled>ENTER THE ISLAND <span>↗</span></button><button class="online-pill" disabled><i></i> ONLINE MATCHMAKING · NEXT PHASE</button></div>
+      </div>
+      <div class="lobby-foot"><span>WASD MOVE</span><span>MOUSE AIM</span><span>CLICK FIRE</span><span>E PICK UP</span><span>SHIFT SPRINT</span><span>MAP DATA · CITY OF TORONTO OPEN DATA</span></div>
+    </section>
+  </main>
+
+  <section id="game-hud" class="game-hud" hidden aria-label="Match interface">
+    <header class="match-top">
+      <div class="match-brand"><img src="./assets/flemingdon-royale-logo.png" alt=""><span>FLEMINGDON<br><b>ROYALE</b></span></div>
+      <div class="match-pill"><small>CONTESTANTS LEFT</small><strong id="alive-count">12</strong></div>
+      <div class="match-pill storm-pill"><small id="storm-label">ZONE CLOSES IN</small><strong id="storm-clock">01:00</strong></div>
+      <button id="pause-button" class="pause-button" aria-label="Pause match">Ⅱ</button>
+    </header>
+
+    <div class="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
+    <div id="hit-marker" class="hit-marker" aria-hidden="true">×</div>
+    <div id="toast" class="toast" aria-live="polite"></div>
+    <div id="kill-feed" class="kill-feed" aria-live="polite"></div>
+
+    <div class="minimap-wrap"><div class="minimap-title"><span>FLEMINGDON PARK</span><span id="mini-zone">ZONE</span></div><canvas id="minimap" width="300" height="300" aria-label="Match map"></canvas><span class="map-north">N</span></div>
+
+    <div class="lower-left"><div class="identity-row"><span id="avatar-dot" class="avatar-dot"></span><div><b id="hud-player-name">PLAYER</b><small id="hud-player-team">LANTERN</small></div></div><div class="meter-label"><span>VITALS</span><b id="health-number">100</b></div><div class="meter health-meter"><i id="health-fill"></i></div><div class="meter-label shield-label"><span>SHIELD</span><b id="shield-number">50</b></div><div class="meter shield-meter"><i id="shield-fill"></i></div><div class="consumable-row"><span>MED KIT <b id="medkit-count">0</b></span><span>SHIELD CELL <b id="shield-cell-count">0</b></span></div></div>
+
+    <div id="pickup-prompt" class="pickup-prompt" hidden><kbd>E</kbd><span>PICK UP</span><b id="pickup-name"></b></div>
+    <div id="hotbar" class="hotbar"></div>
+    <div class="weapon-info"><span id="weapon-name">SIDEARM</span><strong><b id="ammo-clip">12</b><i>/</i><span id="ammo-reserve">48</span></strong><small>R RELOAD</small></div>
+    <div class="match-meta"><span><b id="kill-count">0</b> ELIMS</span><span id="match-clock">00:00</span><span id="match-status">DROP · LOOT · SURVIVE</span></div>
+    <div class="controls-hint">WASD MOVE · SHIFT SPRINT · SPACE JUMP · LMB FIRE · E LOOT · R RELOAD · 1–3 WEAPON · H HEAL · J SHIELD · ESC PAUSE</div>
+
+    <div id="touch-controls" class="touch-controls" hidden>
+      <div id="move-pad" class="move-pad"><span id="move-thumb"></span></div>
+      <div class="touch-actions"><button id="touch-pickup">PICKUP</button><button id="touch-reload">RELOAD</button><button id="touch-fire" class="fire-button">FIRE</button><button id="touch-medkit">HEAL</button><button id="touch-shield">SHIELD</button><button id="touch-sprint">SPRINT</button></div>
+    </div>
+  </section>
+
+  <section id="pause-screen" class="end-screen" hidden>
+    <div class="end-card"><span class="eyebrow">FLEMINGDON PARK · MATCH PAUSED</span><h2>TAKE A BREATHER.</h2><p>WASD move · mouse aim · click fire · E pick up · R reload · Shift sprint · Space jump · H med kit · J shield cell.</p><div class="end-actions"><button id="resume-button" class="primary">BACK TO MATCH</button><button id="quit-button" class="secondary">LEAVE MATCH</button></div></div>
+  </section>
+  <section id="result-screen" class="end-screen" hidden>
+    <div class="end-card result-card"><span id="result-eyebrow" class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">LAST LANTERN STANDING.</h2><p id="result-copy"></p><div id="result-stats" class="result-stats"></div><div class="end-actions"><button id="again-button" class="primary">DROP AGAIN</button><button id="lobby-button" class="secondary">CHANGE PLAYER</button></div></div>
+  </section>
+
+  <div id="loading" class="loading" hidden><div class="loader"></div><span>SETTING UP FLEMINGDON PARK</span></div>
+</body>
+</html>
