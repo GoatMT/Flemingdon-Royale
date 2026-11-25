@@ -59,28 +59,32 @@ export async function createWorld(scene){
 
 function createBuildingMeshes(scene,features,buildingMeshes,collisions,grid,cellSize){
   const palette=[
-    [mat('#766e5f',.94),mat('#b6aa91',.88)],
-    [mat('#627068',.92),mat('#b0b6a8',.84)],
-    [mat('#59645e',.88),mat('#c1b89e',.82)],
-    [mat('#4f5b59',.84),mat('#c9c6b7',.76)]
-  ];
-  const batches=palette.map(()=>[[[],[]],[[],[]]]),windowRecords=[];
+    {wall:'#878276',roof:'#5b5c55',coping:'#a69e89',frame:'#c5bead'},
+    {wall:'#92958c',roof:'#676a63',coping:'#b5b8aa',frame:'#d2d1c6'},
+    {wall:'#927b68',roof:'#625c53',coping:'#b59e87',frame:'#d5c3aa'},
+    {wall:'#777f74',roof:'#565e56',coping:'#a4ad9d',frame:'#c1c9b8'},
+    {wall:'#a49d8b',roof:'#6d695e',coping:'#c2baa6',frame:'#d8d0bc'},
+    {wall:'#697674',roof:'#4f5d5a',coping:'#98a4a0',frame:'#b7c4c0'},
+    {wall:'#8c8174',roof:'#635b54',coping:'#b2a28f',frame:'#d1c0aa'},
+    {wall:'#868d87',roof:'#5f6560',coping:'#adb5aa',frame:'#cbd2c7'}
+  ].map(style=>({...style,wallMaterial:mat(style.wall,.91),roofMaterial:mat(style.roof,.93),copingMaterial:mat(style.coping,.82)}));
+  const batches=palette.map(()=>[[[],[]],[[],[]]]),windowRecords=[],balconyRecords=[],parapetRecords=palette.map(()=>[]);
   for(const feature of features){
-    const height=Math.max(3,Math.min(180,Number(feature.height)||10));
-    const tier=height<9?0:height<20?1:height<55?2:3;
+    const height=Math.max(3,Math.min(180,Number(feature.height)||10)),styleIndex=stableHash(feature.id)%palette.length;
     const polygons=buildingPolygons(feature.parts||[]);
     if(!polygons.length)continue;
     const allPoints=polygons.flatMap(polygon=>polygon.outer);
     const bounds={minX:Math.min(...allPoints.map(p=>p[0])),maxX:Math.max(...allPoints.map(p=>p[0])),minZ:Math.min(...allPoints.map(p=>p[1])),maxZ:Math.max(...allPoints.map(p=>p[1])),polygons};
     collisions.push(bounds);indexCellGrid(grid,bounds,cellSize);
     for(const polygon of polygons){
-      appendFacadeWindows(polygon.outer,height,windowRecords);
+      appendFacadeWindows(polygon.outer,height,feature.id,palette[styleIndex],windowRecords,balconyRecords);
+      appendRoofParapets(polygon.outer,height,parapetRecords[styleIndex]);
       const shape=shapeFromBuildingPolygon(polygon);
       const geometry=new THREE.ExtrudeGeometry(shape,{depth:height,steps:1,bevelEnabled:false,curveSegments:1});
       geometry.rotateX(-Math.PI/2);
       const index=geometry.getIndex(),positions=geometry.attributes.position,normals=geometry.attributes.normal;
       for(const group of geometry.groups){
-        const target=batches[tier][group.materialIndex===1?1:0];
+        const target=batches[styleIndex][group.materialIndex===1?1:0];
         for(let i=group.start;i<group.start+group.count;i++){
           const vertex=index?index.getX(i):i;
           target[0].push(positions.getX(vertex),positions.getY(vertex),positions.getZ(vertex));
@@ -90,27 +94,68 @@ function createBuildingMeshes(scene,features,buildingMeshes,collisions,grid,cell
       geometry.dispose();
     }
   }
-  for(let tier=0;tier<batches.length;tier++)for(let surface=0;surface<2;surface++){
-    const [positions,normals]=batches[tier][surface];if(!positions.length)continue;
+  for(let style=0;style<batches.length;style++)for(let surface=0;surface<2;surface++){
+    const [positions,normals]=batches[style][surface];if(!positions.length)continue;
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));geometry.computeBoundingSphere();
-    const mesh=new THREE.Mesh(geometry,palette[tier][surface]);mesh.name='City building massing';mesh.castShadow=true;mesh.receiveShadow=true;scene.add(mesh);buildingMeshes.push(mesh);
+    const mesh=new THREE.Mesh(geometry,surface===0?palette[style].wallMaterial:palette[style].roofMaterial);mesh.name='Mapped building facades and roofs';mesh.castShadow=true;mesh.receiveShadow=true;scene.add(mesh);buildingMeshes.push(mesh);
   }
   if(windowRecords.length){
-    const windows=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,.08),new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.48,metalness:.08}),windowRecords.length),dummy=new THREE.Object3D();
-    windowRecords.forEach((window,index)=>{dummy.position.set(window.x,window.y,window.z);dummy.rotation.y=window.angle;dummy.scale.set(window.width,window.height,1);dummy.updateMatrix();windows.setMatrixAt(index,dummy.matrix);windows.setColorAt(index,new THREE.Color(window.tint));});
-    windows.instanceMatrix.needsUpdate=true;if(windows.instanceColor)windows.instanceColor.needsUpdate=true;windows.name='Simplified building facade windows';windows.castShadow=false;windows.receiveShadow=true;scene.add(windows);buildingMeshes.push(windows);
+    const panes=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,.06),new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.34,metalness:.18}),windowRecords.length),frames=new THREE.InstancedMesh(makeWindowFrameGeometry(),new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.55,metalness:.08}),windowRecords.length),dummy=new THREE.Object3D();
+    windowRecords.forEach((window,index)=>{
+      dummy.position.set(window.x,window.y,window.z);dummy.rotation.y=window.angle;dummy.scale.set(window.width*.86,window.height*.86,1);dummy.updateMatrix();panes.setMatrixAt(index,dummy.matrix);panes.setColorAt(index,new THREE.Color(window.tint));
+      dummy.scale.set(window.width,window.height,1);dummy.position.z+=window.outZ*.045;dummy.position.x+=window.outX*.045;dummy.updateMatrix();frames.setMatrixAt(index,dummy.matrix);frames.setColorAt(index,new THREE.Color(window.frame));
+    });
+    panes.instanceMatrix.needsUpdate=true;frames.instanceMatrix.needsUpdate=true;if(panes.instanceColor)panes.instanceColor.needsUpdate=true;if(frames.instanceColor)frames.instanceColor.needsUpdate=true;
+    panes.name='Inset facade glazing';frames.name='Raised window surrounds';panes.castShadow=false;panes.receiveShadow=true;frames.castShadow=false;frames.receiveShadow=true;scene.add(panes,frames);buildingMeshes.push(panes,frames);
+  }
+  if(balconyRecords.length){
+    const unitBox=new THREE.BoxGeometry(1,1,1),slabs=new THREE.InstancedMesh(unitBox,mat('#938b7c',.86),balconyRecords.length),rails=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,.05),new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.35,metalness:.12,transparent:true,opacity:.56,depthWrite:false}),balconyRecords.length),caps=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.07,.08),mat('#7d827c',.48,.28),balconyRecords.length),dummy=new THREE.Object3D();
+    balconyRecords.forEach((balcony,index)=>{
+      dummy.rotation.y=balcony.angle;dummy.position.set(balcony.x+balcony.outX*.34,balcony.y,balcony.z+balcony.outZ*.34);dummy.scale.set(balcony.width,.14,.72);dummy.updateMatrix();slabs.setMatrixAt(index,dummy.matrix);
+      dummy.position.set(balcony.x+balcony.outX*.72,balcony.y+.43,balcony.z+balcony.outZ*.72);dummy.scale.set(balcony.width*.94,.72,1);dummy.updateMatrix();rails.setMatrixAt(index,dummy.matrix);rails.setColorAt(index,new THREE.Color(balcony.tint));
+      dummy.position.y=balcony.y+.83;dummy.scale.set(balcony.width,.07,1);dummy.updateMatrix();caps.setMatrixAt(index,dummy.matrix);
+    });
+    for(const mesh of [slabs,rails,caps]){mesh.instanceMatrix.needsUpdate=true;if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;mesh.castShadow=false;mesh.receiveShadow=true;scene.add(mesh);buildingMeshes.push(mesh);}
+    slabs.name='Projected apartment balcony slabs';rails.name='Apartment balcony glazing';caps.name='Apartment balcony handrails';
+  }
+  for(let style=0;style<parapetRecords.length;style++){
+    const records=parapetRecords[style];if(!records.length)continue;
+    const coping=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),palette[style].copingMaterial,records.length),dummy=new THREE.Object3D();
+    records.forEach((part,index)=>{dummy.position.set(part.x,part.y,part.z);dummy.rotation.y=part.angle;dummy.scale.set(part.width,.46,.19);dummy.updateMatrix();coping.setMatrixAt(index,dummy.matrix);});
+    coping.instanceMatrix.needsUpdate=true;coping.name='Roof parapet depth accents';coping.castShadow=true;coping.receiveShadow=true;scene.add(coping);buildingMeshes.push(coping);
   }
 }
-function appendFacadeWindows(ring,height,windows){
-  const points=closedRing(ring),rows=Math.max(1,Math.min(14,Math.floor((height-1.5)/3.25))),tints=['#304345','#405b5d','#526969','#6b7d73'];let made=0;
-  for(let i=0;i<points.length&&made<160;i++){
-    const a=points[i],b=points[(i+1)%points.length],dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);if(length<3.5)continue;
-    const count=Math.min(18,Math.max(1,Math.floor(length/4.7))),ux=dx/length,uz=dz/length,outX=-uz,outZ=ux,angle=Math.atan2(-uz,ux),width=Math.min(1.55,length/count*.54);
-    for(let row=0;row<rows&&made<160;row++)for(let column=0;column<count&&made<160;column++){
-      const along=(column+.5)*length/count,y=1.25+row*3.25;if(y+1.35>height)continue;
-      windows.push({x:a[0]+ux*along+outX*.07,y,z:a[1]+uz*along+outZ*.07,angle,width,height:row===0&&height<6?1:1.25,tint:tints[(row+column)%tints.length]});made++;
+function appendFacadeWindows(ring,height,buildingId,style,windows,balconies){
+  const points=closedRing(ring),floorHeight=height>=25?3.05:height>=11?3.15:2.85,rows=Math.max(1,Math.min(24,Math.floor((height-.7)/floorHeight))),isTower=height>=25;let made=0;
+  for(let i=0;i<points.length&&made<220;i++){
+    const a=points[i],b=points[(i+1)%points.length],dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);if(length<3.7)continue;
+    const bay=isTower?4.2:3.7,count=Math.min(28,Math.max(1,Math.floor(length/bay))),ux=dx/length,uz=dz/length,outX=-uz,outZ=ux,angle=Math.atan2(-uz,ux),width=Math.min(isTower?1.28:1.4,length/count*.5),paneHeight=Math.min(isTower?1.52:1.32,floorHeight*.52);
+    for(let row=0;row<rows&&made<220;row++)for(let column=0;column<count&&made<220;column++){
+      const along=(column+.5)*length/count,y=1.22+row*floorHeight;if(y+paneHeight*.55>height)continue;
+      const variation=stableHash(`${buildingId}:${i}:${row}:${column}`),glass=['#2f4143','#3b5052','#485c5b','#60706b'][variation%4];
+      const x=a[0]+ux*along+outX*.025,z=a[1]+uz*along+outZ*.025;
+      windows.push({x,y,z,angle,width,height:paneHeight,tint:glass,frame:style.frame,outX,outZ});
+      if(isTower&&row>0&&row<rows-1&&column%3===1&&variation%3!==0){
+        balconies.push({x,y:y-paneHeight*.55-.12,z,angle,width:Math.min(2.25,width*1.7),outX,outZ,tint:variation%2?'#95ada7':'#a4b8b1'});
+      }
+      made++;
     }
   }
+}
+function appendRoofParapets(ring,height,records){
+  if(height<7)return;const points=closedRing(ring);
+  for(let i=0;i<points.length;i++){
+    const a=points[i],b=points[(i+1)%points.length],dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);if(length<2.5)continue;
+    records.push({x:(a[0]+b[0])*.5,y:height+.23,z:(a[1]+b[1])*.5,width:length+.05,angle:Math.atan2(-dz,dx)});
+  }
+}
+function makeWindowFrameGeometry(){
+  const shape=new THREE.Shape();shape.moveTo(-.5,-.5);shape.lineTo(.5,-.5);shape.lineTo(.5,.5);shape.lineTo(-.5,.5);shape.closePath();
+  const opening=new THREE.Path();opening.moveTo(-.42,-.42);opening.lineTo(-.42,.42);opening.lineTo(.42,.42);opening.lineTo(.42,-.42);opening.closePath();shape.holes.push(opening);
+  const geometry=new THREE.ExtrudeGeometry(shape,{depth:.1,bevelEnabled:false,curveSegments:1});geometry.translate(0,0,-.05);return geometry;
+}
+function stableHash(value){
+  const textValue=String(value??'');let hash=2166136261;for(let i=0;i<textValue.length;i++){hash^=textValue.charCodeAt(i);hash=Math.imul(hash,16777619);}return hash>>>0;
 }
 
 function buildingPolygons(rings){
@@ -275,3 +320,4 @@ function createTreeMeshes(scene,records,grid,cellSize,random,treeMeshes){
 }
 
 export function updateStormVisual(world,radius){world.zone.scale.set(radius,radius,1);world.stormWall.scale.set(radius,1,radius);}
+
