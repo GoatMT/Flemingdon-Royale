@@ -229,7 +229,7 @@ function appendRibbon(buffer,points,width,y){
 }
 function addRibbonMesh(scene,buffer,material,name){
   if(!buffer.indices.length)return;
-  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(buffer.positions,3));geometry.setIndex(new Uint32Array(buffer.indices));geometry.computeVertexNormals();geometry.computeBoundingSphere();
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(buffer.positions,3));geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(buffer.indices),1));geometry.computeVertexNormals();geometry.computeBoundingSphere();
   const mesh=new THREE.Mesh(geometry,material);mesh.name=name;mesh.receiveShadow=true;mesh.castShadow=false;scene.add(mesh);
 }
 function createTreeMeshes(scene,records,grid,cellSize,random,treeMeshes){
