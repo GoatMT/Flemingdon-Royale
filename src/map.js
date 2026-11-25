@@ -227,24 +227,78 @@ function shapeFromGeoPolygon(rings){
   const shape=pathFromRing(rings[0]);for(const hole of rings.slice(1))if(hole.length>=4)shape.holes.push(pathFromRing(hole));return[shape];
 }
 function createRoadMeshes(scene,roads){
-  const classes={arterial:emptyRibbon(),collector:emptyRibbon(),local:emptyRibbon(),trail:emptyRibbon(),walkway:emptyRibbon()},dashes=[];
+  const classes={arterial:emptyRibbon(),collector:emptyRibbon(),local:emptyRibbon(),trail:emptyRibbon(),walkway:emptyRibbon()},curbs=emptyRibbon(),gutters=emptyRibbon(),dashes=[];
   for(const road of roads){
     const type=roadType(road),width=Math.max(type==='trail'?2.6:type==='walkway'?1.8:road.width,1);
     appendRibbon(classes[type],road.points,width,-.105);
+    if(type!=='trail'&&type!=='walkway'&&!/expressway|ramp/i.test(road.class)){
+      for(const side of [-1,1]){
+        appendRibbon(curbs,offsetPolyline(road.points,side*(width*.5-.12)),.24,-.045);
+        appendRibbon(gutters,offsetPolyline(road.points,side*(width*.5-.42)),.11,-.09);
+      }
+    }
     for(let i=0;i<road.points.length-1;i++){
       const a=road.points[i],b=road.points[i+1],length=dist(a,b);if(length<1)continue;
       const item={road,a,b,length,midX:(a[0]+b[0])/2,midZ:(a[1]+b[1])/2,angle:-Math.atan2(b[1]-a[1],b[0]-a[0])};
-      if(type==='arterial')for(let along=-length*.38;along<length*.38;along+=27)dashes.push({item,along});
+      if((type==='arterial'&&!/expressway|ramp/i.test(road.class))||(type==='collector'&&length>20)){
+        const dashLength=type==='arterial'?8:4,spacing=type==='arterial'?27:18;
+        for(let along=-length*.38;along<length*.38;along+=spacing)dashes.push({item,along,length:dashLength,tint:type==='arterial'?'#d9d5c4':'#d9bd65'});
+      }
     }
   }
   const roadColors={arterial:'#424945',collector:'#454b46',local:'#4b514c',trail:'#82775e',walkway:'#aaa58e'};
   for(const [type,geometry] of Object.entries(classes))addRibbonMesh(scene,geometry,mat(roadColors[type],.98),`City ${type} roads and paths`);
+  addRibbonMesh(scene,curbs,mat('#9a9b8e',.92),'Raised road curb edges');
+  addRibbonMesh(scene,gutters,mat('#343b36',.96),'Road gutter seams');
   if(dashes.length){
-    const dummy=new THREE.Object3D(),dashMesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.025,.2),mat('#d6d0b7',.9),dashes.length);
-    dashes.forEach((dash,index)=>{const {item,along}=dash,ux=Math.cos(-item.angle),uz=Math.sin(-item.angle);dummy.position.set(item.midX+ux*along,-.087,item.midZ+uz*along);dummy.rotation.y=item.angle;dummy.scale.set(8,1,1);dummy.updateMatrix();dashMesh.setMatrixAt(index,dummy.matrix);});
-    dashMesh.instanceMatrix.needsUpdate=true;dashMesh.castShadow=false;scene.add(dashMesh);
+    const dummy=new THREE.Object3D(),dashMesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.025,.2),new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.9}),dashes.length);
+    dashes.forEach((dash,index)=>{const {item,along}=dash,ux=Math.cos(-item.angle),uz=Math.sin(-item.angle);dummy.position.set(item.midX+ux*along,-.087,item.midZ+uz*along);dummy.rotation.y=item.angle;dummy.scale.set(dash.length,1,1);dummy.updateMatrix();dashMesh.setMatrixAt(index,dummy.matrix);dashMesh.setColorAt(index,new THREE.Color(dash.tint));});
+    dashMesh.instanceMatrix.needsUpdate=true;if(dashMesh.instanceColor)dashMesh.instanceColor.needsUpdate=true;dashMesh.castShadow=false;dashMesh.name='Mapped arterial and collector lane markings';scene.add(dashMesh);
+  }
+  const crosswalks=buildIntersectionCrosswalks(roads);
+  if(crosswalks.length){
+    const dummy=new THREE.Object3D(),marks=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.025,1),mat('#d7d4c7',.95),crosswalks.length);
+    crosswalks.forEach((mark,index)=>{dummy.position.set(mark.x,-.075,mark.z);dummy.rotation.y=mark.angle;dummy.scale.set(.42,1,mark.span);dummy.updateMatrix();marks.setMatrixAt(index,dummy.matrix);});
+    marks.instanceMatrix.needsUpdate=true;marks.castShadow=false;marks.receiveShadow=true;marks.name='Estimated intersection crosswalk paint';scene.add(marks);
   }
   for(const road of roads)if(road.label){const center=road.points[Math.floor((road.points.length-1)/2)];const label=makeLabel(road.name.toUpperCase());label.scale.set(Math.max(72,Math.min(160,road.name.length*5.5)),13,1);label.position.set(center[0],8,center[1]+15);scene.add(label);}
+}
+function offsetPolyline(points,offset){
+  const clean=[];for(const point of points)if(!clean.length||dist(point,clean[clean.length-1])>.2)clean.push(point);if(clean.length<2)return clean;
+  const normals=[];for(let i=0;i<clean.length;i++){const before=clean[Math.max(0,i-1)],after=clean[Math.min(clean.length-1,i+1)],dx=after[0]-before[0],dz=after[1]-before[1],length=Math.hypot(dx,dz)||1;normals.push([-dz/length,dx/length]);}
+  return clean.map(([x,z],i)=>{
+    let[nx,nz]=normals[i];if(i>0&&i<clean.length-1){const previous=normals[i-1],next=normals[i],mx=previous[0]+next[0],mz=previous[1]+next[1],magnitude=Math.hypot(mx,mz)||1;nx=mx/magnitude;nz=mz/magnitude;const divisor=Math.max(.28,Math.abs(nx*next[0]+nz*next[1])),scale=Math.min(Math.abs(offset)/divisor,Math.abs(offset)*3);nx*=scale*Math.sign(offset);nz*=scale*Math.sign(offset);}else{nx*=offset;nz*=offset;}return[x+nx,z+nz];
+  });
+}
+function buildIntersectionCrosswalks(roads){
+  const nodes=new Map(),snap=2.5;
+  roads.forEach(road=>{
+    if(/trail|walkway/i.test(road.class)||/expressway|ramp|parkway/i.test(`${road.class} ${road.name}`))return;
+    const width=Math.max(road.width||0,1);if(width<10)return;
+    road.points.forEach((point,index)=>{
+      const key=Math.round(point[0]/snap)+','+Math.round(point[1]/snap);let node=nodes.get(key);if(!node)nodes.set(key,node={x:0,z:0,count:0,names:new Set(),arms:[]});
+      node.x+=point[0];node.z+=point[1];node.count++;node.names.add(String(road.name||'').toLowerCase());
+      for(const neighborIndex of [index-1,index+1]){
+        const neighbor=road.points[neighborIndex];if(!neighbor)continue;const dx=neighbor[0]-point[0],dz=neighbor[1]-point[1],length=Math.hypot(dx,dz);if(length<.8)continue;
+        node.arms.push({dx:dx/length,dz:dz/length,width,name:road.name,roadClass:road.class});
+      }
+    });
+  });
+  const marks=[];
+  for(const node of nodes.values()){
+    if(node.names.size<2)continue;
+    const x=node.x/node.count,z=node.z/node.count,arms=[],seen=new Set();
+    for(const arm of node.arms){
+      const angle=Math.atan2(arm.dz,arm.dx),key=Math.round(angle*18/Math.PI);if(seen.has(key))continue;seen.add(key);arms.push(arm);
+    }
+    if(arms.length<3)continue;
+    for(const arm of arms){
+      if(arm.width>24||/expressway|ramp|parkway/i.test(`${arm.roadClass} ${arm.name}`))continue;
+      const angle=Math.atan2(arm.dz,arm.dx),crossAngle=-angle,centerX=x+arm.dx*7.5,centerZ=z+arm.dz*7.5,span=Math.max(4.2,Math.min(arm.width-.7,8.5));
+      for(let stripe=-2;stripe<=2;stripe++)marks.push({x:centerX+arm.dx*stripe*.62,z:centerZ+arm.dz*stripe*.62,angle:crossAngle,span});
+    }
+  }
+  return marks;
 }
 function createSidewalkMeshes(scene,paths){
   const sidewalks=emptyRibbon();for(const points of paths)appendRibbon(sidewalks,points,1.8,-.16);
